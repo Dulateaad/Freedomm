@@ -5,6 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
 import time
 from collections import defaultdict
+import csv
 
 load_dotenv()
 
@@ -16,9 +17,12 @@ DOWNLOAD_LINK = "https://freedombank.onelink.me/WNLd/h8jtco42"
 bot = telebot.TeleBot(TOKEN)
 user_ids_file = "user_ids.txt"
 referrals_file = "referrals.txt"
+contacts_file = "contacts.txt"
+bloggers_file = "bloggers.txt"
 broadcast_state = {}
 
-# Загрузка chat_id пользователей
+# Загрузка данных
+
 def load_user_ids():
     try:
         with open(user_ids_file, "r") as f:
@@ -31,22 +35,38 @@ def save_user_ids():
         for uid in user_ids:
             f.write(f"{uid}\n")
 
-user_ids = load_user_ids()
+def load_bloggers():
+    try:
+        with open(bloggers_file, "r") as f:
+            return set(line.strip().lower() for line in f if line.strip())
+    except FileNotFoundError:
+        return set()
 
-# Главное меню
-def main_menu():
+def save_blogger(username):
+    with open(bloggers_file, "a") as f:
+        f.write(f"{username.lower()}\n")
+
+user_ids = load_user_ids()
+bloggers = load_bloggers()
+
+# Кнопки для блогеров и админа
+
+def get_main_menu(username):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("✅ Я скачал приложение")
-    markup.add("📊 Статистика", "🔍 Мои старты")
+    if username and username.lower() in bloggers:
+        markup.row("📈 Мои старты")
+    if username and message.chat.id == ADMIN_CHAT_ID:
+        markup.row("📊 Статистика", "📥 Выгрузка CSV")
+        markup.row("✏️ Добавить блогера")
     return markup
 
-# Старт с отслеживанием реферала
+# /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     cid = message.chat.id
     args = message.text.split()
     referrer = args[1] if len(args) > 1 else "unknown"
-    username = message.from_user.username or str(cid)
+    username = message.from_user.username or "без ника"
 
     with open(referrals_file, "a") as f:
         f.write(f"{cid},{referrer},{username}\n")
@@ -55,99 +75,116 @@ def send_welcome(message):
         user_ids.add(cid)
         save_user_ids()
 
+    bot.send_message(cid, "👋 Добро пожаловать! Напишите, пожалуйста, свою фамилию и номер телефона.")
+
+    time.sleep(60)
+
+    markup = get_main_menu(username)
     bot.send_message(
         cid,
-        "👋 Добро пожаловать!\n\n"
         "1. Скачайте Freedom Superapp по ссылке👇\n\n"
         f"{DOWNLOAD_LINK}\n\n"
-        "2. Пройдите регистрацию и укажите промокод *ZAKIROVA* (если потребуется).\n"
-        "3. После активации карты:\n"
-        "   • пополните баланс телефона\n"
-        "   • или оплатите покупку\n\n"
-        "💸 Получите кэшбек 1000 ₸!\n"
-        "🎁 Делитесь ссылкой и получайте ещё по 1000 ₸ за каждого друга!",
-        reply_markup=main_menu(),
-        parse_mode="Markdown"
+        "2. Пройдите регистрацию (введите ИИН и номер телефона).\n\n"
+        "3. В поле «Промокод» выберите ZAKIROVA (большими буквами. Промокод могут и не запрашивать)\n\n"
+        "4. Дождитесь оформления карты SuperCard и напишите в бот фио и номер телефона чтоб мы вам закинули денег на активацию. (Или сами закиньте себе на карту 100 тенге)\n\n"
+        "5. После получения 100 тенге Совершите любую транзакцию - рекомендуем:\n\n"
+        "• пополнить баланс телефона (операции - платежи - мобильная связь)\n"
+        "• либо совершить любую покупку в магазине, оплатив ее картой SuperCard.\n\n"
+        "6. Получите свой первый кэшбек 1000 тенге 🎉\n\n"
+        "7.Далее можете делиться своей ссылкой и зарабатывать по 1000 тенге за каждое скачивание ❤️\n\n"
+        "8. Ниже будет телеграмм канал с информацией как дальше зарабатывать на Фридом кроме рассылки ссылок",
+        reply_markup=markup
     )
 
-# Обработка обычных сообщений
+# Обработка текста
 @bot.message_handler(func=lambda msg: True)
-def handle_response(message):
+def handle_message(message):
     cid = message.chat.id
-    text = message.text.strip().lower()
-    username = message.from_user.username or "без ника"
+    text = message.text.strip()
+    username = (message.from_user.username or "без ника").lower()
 
     if cid != ADMIN_CHAT_ID:
         user_ids.add(cid)
         save_user_ids()
 
-    if text in ["я скачал", "я скачала", "✅ я скачал приложение"]:
-        bot.send_message(cid, f"📲 Отлично! Вот ссылка на канал с инструкцией: {INSTRUCTION_LINK}")
+    if text.startswith("+7") or any(char.isdigit() for char in text):
+        with open(contacts_file, "a") as f:
+            f.write(f"{cid},{text}\n")
+        bot.send_message(cid, "✅ Контакт получен. Спасибо!")
         return
 
-    if text == "📊 статистика" and cid == ADMIN_CHAT_ID:
-        show_stats(message)
+    if text == "📊 Статистика" and cid == ADMIN_CHAT_ID:
+        stats = defaultdict(int)
+        try:
+            with open(referrals_file, "r") as f:
+                for line in f:
+                    parts = line.strip().split(",")
+                    if len(parts) >= 2:
+                        stats[parts[1]] += 1
+        except FileNotFoundError:
+            bot.send_message(cid, "📂 Файл referrals.txt не найден.")
+            return
+
+        if not stats:
+            bot.send_message(cid, "❗ Пока нет данных по пользователям.")
+            return
+
+        msg = "📊 *Статистика по блогерам:*\n\n"
+        for ref, count in sorted(stats.items(), key=lambda x: -x[1]):
+            msg += f"🔹 {ref} — {count} чел.\n"
+        bot.send_message(cid, msg, parse_mode="Markdown")
         return
 
-    if text == "🔍 мои старты":
-        show_my_starts(message)
+    if text == "📈 Мои старты":
+        starts = []
+        try:
+            with open(referrals_file, "r") as f:
+                for line in f:
+                    parts = line.strip().split(",")
+                    if len(parts) >= 3 and parts[1].lower() == username:
+                        starts.append(parts[2])
+        except FileNotFoundError:
+            bot.send_message(cid, "📂 Файл referrals.txt не найден.")
+            return
+
+        if not starts:
+            bot.send_message(cid, "😕 Пока никто не пришел по вашей ссылке.")
+        else:
+            msg = "📥 Люди, пришедшие по вашей ссылке:\n\n"
+            for user in starts:
+                msg += f"🔹 @{user}\n"
+            bot.send_message(cid, msg)
         return
 
-    admin_msg = f"📥 Новое сообщение от @{username}\n🆔 ID: {cid}\n💬: {message.text}"
-    bot.send_message(ADMIN_CHAT_ID, admin_msg)
-
-    bot.send_message(cid, "✅ Спасибо! Мы получили ваши данные.")
-
-# Общая статистика по рефералам (для админа)
-def show_stats(message):
-    stats = defaultdict(int)
-    try:
-        with open(referrals_file, "r") as f:
-            for line in f:
-                parts = line.strip().split(",")
-                if len(parts) >= 2:
-                    stats[parts[1]] += 1
-    except FileNotFoundError:
-        bot.send_message(message.chat.id, "📂 Файл referrals.txt не найден.")
+    if text == "📥 Выгрузка CSV" and cid == ADMIN_CHAT_ID:
+        try:
+            with open(contacts_file, "r") as infile, open("contacts.csv", "w", newline='') as outfile:
+                writer = csv.writer(outfile)
+                writer.writerow(["Chat ID", "Контакт"])
+                for line in infile:
+                    writer.writerow(line.strip().split(","))
+            with open("contacts.csv", "rb") as doc:
+                bot.send_document(cid, doc)
+        except Exception as e:
+            bot.send_message(cid, f"❗ Ошибка при выгрузке: {e}")
         return
 
-    if not stats:
-        bot.send_message(message.chat.id, "❗ Пока нет данных по пользователям.")
+    if text == "✏️ Добавить блогера" and cid == ADMIN_CHAT_ID:
+        bot.send_message(cid, "✏️ Введите username блогера (без @):")
+        broadcast_state[cid] = 'adding_blogger'
         return
 
-    msg = "📊 *Статистика по блогерам:*\n\n"
-    for ref, count in sorted(stats.items(), key=lambda x: -x[1]):
-        msg += f"🔹 {ref} — {count} чел.\n"
-
-    bot.send_message(message.chat.id, msg, parse_mode="Markdown")
-
-# Стартовавшие по ссылке конкретного пользователя
-def show_my_starts(message):
-    cid = message.chat.id
-    username = message.from_user.username or str(cid)
-    my_ref = username
-
-    referred_users = []
-    try:
-        with open(referrals_file, "r") as f:
-            for line in f:
-                parts = line.strip().split(",")
-                if len(parts) >= 3 and parts[1] == my_ref:
-                    referred_users.append(parts[2])
-    except FileNotFoundError:
-        bot.send_message(cid, "📂 Файл с рефералами пока не создан.")
+    if broadcast_state.get(cid) == 'adding_blogger':
+        save_blogger(text.lower())
+        bloggers.add(text.lower())
+        bot.send_message(cid, f"✅ Блогер @{text} добавлен.")
+        broadcast_state.pop(cid, None)
         return
 
-    if not referred_users:
-        bot.send_message(cid, "❗ Пока никто не переходил по вашей ссылке.")
-        return
-
-    msg = f"🔍 *Ваши переходы:* {len(referred_users)} чел.\n\n"
-    msg += "\n".join([f"• {u}" for u in referred_users])
-
-    bot.send_message(cid, msg, parse_mode="Markdown")
+    bot.send_message(cid, "❗ Неизвестная команда. Напишите номер телефона или фамилию.")
 
 # Планировщик напоминаний
+
 def send_daily_reminders():
     for uid in user_ids:
         try:
@@ -171,10 +208,10 @@ scheduler.start()
 
 print("✅ Бот запущен. Ожидаем сообщения...")
 
-# Основной цикл
 while True:
     try:
         bot.polling(none_stop=True)
     except Exception as e:
         print(f"❗ Ошибка polling: {e}")
         time.sleep(10)
+
