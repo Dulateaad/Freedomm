@@ -1,2 +1,4 @@
-pytelegrambotapi
+pyTelegramBotAPI
 python-dotenv
+apscheduler
+pytz
