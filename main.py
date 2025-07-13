@@ -73,6 +73,10 @@ def send_welcome(message):
     if cid != ADMIN_CHAT_ID:
         user_ids.add(cid)
         save_user_ids()
+        bot.send_message(
+            ADMIN_CHAT_ID,
+            f"👤 Новый пользователь:\n\n🆔 Chat ID: {cid}\n🔗 Реферал: {referrer}\n👤 Username: @{username}"
+        )
 
     markup = get_main_menu(username, cid)
 
@@ -123,6 +127,7 @@ def handle_message(message):
         with open(contacts_file, "a") as f:
             f.write(f"{cid},{text}\n")
         bot.send_message(cid, "✅ Контакт получен. Спасибо!")
+        bot.send_message(ADMIN_CHAT_ID, f"📞 Контакт от @{username}:\n{text}")
         return
 
     if text == "📊 Статистика" and cid == ADMIN_CHAT_ID:
@@ -196,6 +201,7 @@ def handle_message(message):
     bot.send_message(cid, "❗ Неизвестная команда. Напишите номер телефона или фамилию.")
 
 # Планировщик
+
 def send_daily_reminders():
     for uid in user_ids:
         try:
