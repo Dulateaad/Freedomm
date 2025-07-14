@@ -19,6 +19,7 @@ bot = telebot.TeleBot(TOKEN)
 user_ids_file = "user_ids.txt"
 referrals_file = "referrals.txt"
 contacts_file = "contacts.txt"
+users_file = "users.txt"
 bloggers_file = "bloggers.txt"
 broadcast_state = {}
 
@@ -56,6 +57,7 @@ def get_main_menu(username, cid):
         markup.row("📈 Мои старты")
     if cid == ADMIN_CHAT_ID:
         markup.row("📊 Статистика", "📥 Выгрузка CSV")
+        markup.row("📤 Выгрузка пользователей")
         markup.row("✏️ Добавить блогера")
     return markup
 
@@ -73,6 +75,8 @@ def send_welcome(message):
     if cid != ADMIN_CHAT_ID:
         user_ids.add(cid)
         save_user_ids()
+        with open(users_file, "a") as f:
+            f.write(f"{cid},{username}\n")
         bot.send_message(
             ADMIN_CHAT_ID,
             f"👤 Новый пользователь:\n\n🆔 Chat ID: {cid}\n🔗 Реферал: {referrer}\n👤 Username: @{username}"
@@ -80,7 +84,6 @@ def send_welcome(message):
 
     markup = get_main_menu(username, cid)
 
-    # Первое сообщение
     bot.send_message(cid, 
         "Привет! На связи команда Айжан Закировой. Ниже будет ссылка на приложение Банка FREEDOM, "
         "выполнив все условия вы сможете сразу получить перевод на карту от Айжан, и 1000 тенге от FREEDOM\n"
@@ -88,7 +91,6 @@ def send_welcome(message):
         f"{DOWNLOAD_LINK}"
     )
 
-    # Второе сообщение через 60 сек
     def send_second():
         bot.send_message(
             cid,
@@ -125,7 +127,7 @@ def handle_message(message):
 
     if text.startswith("+7") or any(char.isdigit() for char in text):
         with open(contacts_file, "a") as f:
-            f.write(f"{cid},{text}\n")
+            f.write(f"{cid},{text},{username}\n")
         bot.send_message(cid, "✅ Контакт получен. Спасибо!")
         bot.send_message(ADMIN_CHAT_ID, f"📞 Контакт от @{username}:\n{text}")
         return
@@ -177,10 +179,29 @@ def handle_message(message):
         try:
             with open(contacts_file, "r") as infile, open("contacts.csv", "w", newline='') as outfile:
                 writer = csv.writer(outfile)
-                writer.writerow(["Chat ID", "Контакт"])
+                writer.writerow(["Chat ID", "Контакт", "Username"])
                 for line in infile:
-                    writer.writerow(line.strip().split(","))
+                    parts = line.strip().split(",")
+                    if len(parts) == 3:
+                        writer.writerow(parts)
+                    elif len(parts) == 2:
+                        writer.writerow(parts + ["неизвестен"])
             with open("contacts.csv", "rb") as doc:
+                bot.send_document(cid, doc)
+        except Exception as e:
+            bot.send_message(cid, f"❗ Ошибка при выгрузке: {e}")
+        return
+
+    if text == "📤 Выгрузка пользователей" and cid == ADMIN_CHAT_ID:
+        try:
+            with open(users_file, "r") as infile, open("users.csv", "w", newline='') as outfile:
+                writer = csv.writer(outfile)
+                writer.writerow(["Chat ID", "Username"])
+                for line in infile:
+                    parts = line.strip().split(",")
+                    if len(parts) == 2:
+                        writer.writerow(parts)
+            with open("users.csv", "rb") as doc:
                 bot.send_document(cid, doc)
         except Exception as e:
             bot.send_message(cid, f"❗ Ошибка при выгрузке: {e}")
@@ -201,7 +222,6 @@ def handle_message(message):
     bot.send_message(cid, "❗ Неизвестная команда. Напишите номер телефона или фамилию.")
 
 # Планировщик
-
 def send_daily_reminders():
     for uid in user_ids:
         try:
@@ -231,3 +251,4 @@ while True:
     except Exception as e:
         print(f"❗ Ошибка polling: {e}")
         time.sleep(10)
+
