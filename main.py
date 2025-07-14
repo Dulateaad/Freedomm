@@ -245,10 +245,5 @@ scheduler.start()
 
 print("✅ Бот запущен. Ожидаем сообщения...")
 
-while True:
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        print(f"❗ Ошибка polling: {e}")
-        time.sleep(10)
+bot.infinity_polling()
 
