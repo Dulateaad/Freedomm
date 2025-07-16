@@ -27,17 +27,10 @@ verified_users_file = "verified_users.txt"
 broadcast_state = {}
 
 # Загрузка данных
-def load_file_as_set(path):
+def load_user_ids():
     try:
-        with open(path, "r") as f:
+        with open(user_ids_file, "r") as f:
             return set(int(line.strip()) for line in f if line.strip())
-    except FileNotFoundError:
-        return set()
-
-def load_bloggers():
-    try:
-        with open(bloggers_file, "r") as f:
-            return set(line.strip().lower() for line in f if line.strip())
     except FileNotFoundError:
         return set()
 
@@ -46,16 +39,29 @@ def save_user_ids():
         for uid in user_ids:
             f.write(f"{uid}\n")
 
-def save_verified_user(user_id):
-    with open(verified_users_file, "a") as f:
-        f.write(f"{user_id}\n")
+def load_bloggers():
+    try:
+        with open(bloggers_file, "r") as f:
+            return set(line.strip().lower() for line in f if line.strip())
+    except FileNotFoundError:
+        return set()
 
 def save_blogger(username):
     with open(bloggers_file, "a") as f:
         f.write(f"{username.lower()}\n")
 
-user_ids = load_file_as_set(user_ids_file)
-verified_users = load_file_as_set(verified_users_file)
+def is_verified(cid):
+    try:
+        with open(verified_users_file, "r") as f:
+            return str(cid) in [line.strip() for line in f]
+    except FileNotFoundError:
+        return False
+
+def add_verified(cid):
+    with open(verified_users_file, "a") as f:
+        f.write(f"{cid}\n")
+
+user_ids = load_user_ids()
 bloggers = load_bloggers()
 
 # Кнопки
@@ -73,89 +79,73 @@ def get_main_menu(username, cid):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     cid = message.chat.id
+    username = message.from_user.username or "без ника"
+    args = message.text.split()
+    referrer = args[1] if len(args) > 1 else "unknown"
 
-    if cid in verified_users:
-        send_main_flow(message)
-    else:
+    if not is_verified(cid):
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        button = telebot.types.KeyboardButton("📞 Отправить номер", request_contact=True)
+        button = telebot.types.KeyboardButton("📱 Отправить номер телефона", request_contact=True)
         markup.add(button)
-        bot.send_message(cid, "👋 Пожалуйста, отправьте свой номер телефона, чтобы продолжить:", reply_markup=markup)
+        bot.send_message(cid, "👋 Привет! Пожалуйста, нажмите кнопку ниже, чтобы отправить свой номер телефона для продолжения 👇", reply_markup=markup)
+        with open(referrals_file, "a") as f:
+            f.write(f"{cid},{referrer},{username}\n")
+        with open(users_file, "a") as f:
+            f.write(f"{cid},{username}\n")
+        return
+
+    bot.send_message(cid, "✅ Вы уже зарегистрированы!", reply_markup=get_main_menu(username, cid))
 
 # Обработка контакта
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
     cid = message.chat.id
-    username = message.from_user.username or "без ника"
-    phone_number = message.contact.phone_number
+    phone = message.contact.phone_number
+    username = (message.from_user.username or "без ника").lower()
 
-    if cid not in verified_users:
-        with open(contacts_file, "a") as f:
-            f.write(f"{cid},{phone_number},{username}\n")
-        verified_users.add(cid)
-        save_verified_user(cid)
+    # сохраняем контакт
+    with open(contacts_file, "a") as f:
+        f.write(f"{cid},{phone},{username}\n")
+    add_verified(cid)
+    user_ids.add(cid)
+    save_user_ids()
 
-        bot.send_message(ADMIN_CHAT_ID, f"📞 Новый контакт:\n@{username}\n📱 {phone_number}")
-        send_main_flow(message)
+    # уведомляем админа
+    bot.send_message(ADMIN_CHAT_ID, f"📞 Контакт от @{username}:\n{phone}")
+    bot.send_message(cid, "✅ Контакт получен. Спасибо!", reply_markup=get_main_menu(username, cid))
 
-# Основной поток приветствий
-def send_main_flow(message):
-    cid = message.chat.id
-    username = message.from_user.username or "без ника"
-    args = message.text.split()
-    referrer = args[1] if len(args) > 1 else "unknown"
+    # отправляем инструкции
+    send_instruction(cid)
 
-    if cid != ADMIN_CHAT_ID:
-        user_ids.add(cid)
-        save_user_ids()
-        with open(users_file, "a") as f:
-            f.write(f"{cid},{username}\n")
-        with open(referrals_file, "a") as f:
-            f.write(f"{cid},{referrer},{username}\n")
-        bot.send_message(
-            ADMIN_CHAT_ID,
-            f"👤 Новый пользователь:\n🆔 Chat ID: {cid}\n🔗 Реферал: {referrer}\n👤 Username: @{username}"
-        )
-
-    markup = get_main_menu(username, cid)
-
+# Инструкция
+def send_instruction(cid):
     bot.send_message(cid,
-        "Привет! На связи команда Айжан Закировой. Ниже будет ссылка на приложение Банка FREEDOM, "
-        "выполнив все условия вы сможете сразу получить перевод на карту от Айжан, и 1000 тенге от FREEDOM\n"
-        "Плюс получите инструкцию «три метода как заработать на FREEDOM\n\n"
+        f"Привет! На связи команда Айжан Закировой.\n\n"
+        f"Скачайте Freedom SuperApp и получите перевод от Айжан + 1000 тенге от FREEDOM 🎉\n\n"
         f"{DOWNLOAD_LINK}"
     )
 
-    def send_second():
-        bot.send_message(
-            cid,
-            "1. Скачайте Freedom Superapp по ссылке👇\n\n"
-            f"{DOWNLOAD_LINK}\n\n"
-            "2. Пройдите регистрацию (введите ИИН и номер телефона)..."
-        )
+    time.sleep(1)
+    bot.send_message(cid,
+        "1. Скачайте приложение по ссылке выше\n"
+        "2. Пройдите регистрацию (введите ИИН и номер телефона)\n"
+        "3. В поле «Промокод» выберите *ZAKIROVA* (может не запрашиваться)\n"
+        "4. Дождитесь выпуска карты и напишите в бот ФИО + номер телефона или пополните карту на 100₸\n"
+        "5. Совершите транзакцию: пополнение телефона или покупка\n"
+        "6. Получите кэшбек 1000₸\n"
+        "7. Делитесь ссылкой и зарабатывайте по 1000₸ за каждого друга ❤️",
+        parse_mode="Markdown"
+    )
 
-    def ask_name():
-        bot.send_message(cid, "👋 Напишите, пожалуйста, свою фамилию и номер телефона.", reply_markup=markup)
-
-    threading.Timer(60, send_second).start()
-    threading.Timer(90, ask_name).start()
-
-# Обработка текстовых сообщений
+# Обработка текста
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
     cid = message.chat.id
     text = message.text.strip()
     username = (message.from_user.username or "без ника").lower()
 
-    if cid != ADMIN_CHAT_ID:
-        user_ids.add(cid)
-        save_user_ids()
-
-    if text.startswith("+7") or any(char.isdigit() for char in text):
-        with open(contacts_file, "a") as f:
-            f.write(f"{cid},{text},{username}\n")
-        bot.send_message(cid, "✅ Контакт получен. Спасибо!")
-        bot.send_message(ADMIN_CHAT_ID, f"📞 Контакт от @{username}:\n{text}")
+    if not is_verified(cid):
+        bot.send_message(cid, "❗ Сначала нажмите кнопку и отправьте номер телефона.")
         return
 
     if text == "📊 Статистика" and cid == ADMIN_CHAT_ID:
@@ -210,8 +200,6 @@ def handle_message(message):
                     parts = line.strip().split(",")
                     if len(parts) == 3:
                         writer.writerow(parts)
-                    elif len(parts) == 2:
-                        writer.writerow(parts + ["неизвестен"])
             with open("contacts.csv", "rb") as doc:
                 bot.send_document(cid, doc)
         except Exception as e:
@@ -245,9 +233,9 @@ def handle_message(message):
         broadcast_state.pop(cid, None)
         return
 
-    bot.send_message(cid, "❗ Неизвестная команда. Напишите номер телефона или фамилию.")
+    bot.send_message(cid, "❗ Неизвестная команда. Если вы уже отправили номер — следуйте инструкции выше.")
 
-# Планировщик напоминаний
+# Планировщик
 def send_daily_reminders():
     for uid in user_ids:
         try:
