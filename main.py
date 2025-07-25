@@ -8,12 +8,16 @@ from collections import defaultdict
 import csv
 import threading
 
+# Загрузка .env
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
 INSTRUCTION_LINK = os.getenv("INSTRUCTION_LINK")
 DOWNLOAD_LINK = "https://freedombank.onelink.me/WNLd/h8jtco42"
+
+# ✅ Список админов (из .env): ADMIN_CHAT_IDS=123456789,987654321
+admin_ids_raw = os.getenv("ADMIN_CHAT_IDS", "")
+ADMIN_CHAT_IDS = set(int(x.strip()) for x in admin_ids_raw.split(",") if x.strip().isdigit())
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -69,7 +73,7 @@ def get_main_menu(username, cid):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     if username and username.lower() in bloggers:
         markup.row("📈 Мои старты")
-    if cid == ADMIN_CHAT_ID:
+    if cid in ADMIN_CHAT_IDS:
         markup.row("📊 Статистика", "📥 Выгрузка CSV")
         markup.row("📤 Выгрузка пользователей")
         markup.row("✏️ Добавить блогера")
@@ -110,11 +114,14 @@ def handle_contact(message):
     user_ids.add(cid)
     save_user_ids()
 
-    # уведомляем админа
-    bot.send_message(ADMIN_CHAT_ID, f"📞 Контакт от @{username}:\n{phone}")
-    bot.send_message(cid, "✅ Контакт получен. Спасибо!", reply_markup=get_main_menu(username, cid))
+    # уведомляем админов
+    for admin_id in ADMIN_CHAT_IDS:
+        try:
+            bot.send_message(admin_id, f"📞 Контакт от @{username}:\n{phone}")
+        except:
+            continue
 
-    # отправляем инструкции
+    bot.send_message(cid, "✅ Контакт получен. Спасибо!", reply_markup=get_main_menu(username, cid))
     send_instruction(cid)
 
 # Инструкция
@@ -124,7 +131,6 @@ def send_instruction(cid):
         f"Скачайте Freedom SuperApp и получите перевод от Айжан + 1000 тенге от FREEDOM 🎉\n\n"
         f"{DOWNLOAD_LINK}"
     )
-
     time.sleep(1)
     bot.send_message(cid,
         "1. Скачайте приложение по ссылке выше\n"
@@ -148,7 +154,7 @@ def handle_message(message):
         bot.send_message(cid, "❗ Сначала нажмите кнопку и отправьте номер телефона.")
         return
 
-    if text == "📊 Статистика" and cid == ADMIN_CHAT_ID:
+    if text == "📊 Статистика" and cid in ADMIN_CHAT_IDS:
         stats = defaultdict(int)
         try:
             with open(referrals_file, "r") as f:
@@ -191,7 +197,7 @@ def handle_message(message):
             bot.send_message(cid, msg)
         return
 
-    if text == "📥 Выгрузка CSV" and cid == ADMIN_CHAT_ID:
+    if text == "📥 Выгрузка CSV" and cid in ADMIN_CHAT_IDS:
         try:
             with open(contacts_file, "r") as infile, open("contacts.csv", "w", newline='') as outfile:
                 writer = csv.writer(outfile)
@@ -206,7 +212,7 @@ def handle_message(message):
             bot.send_message(cid, f"❗ Ошибка при выгрузке: {e}")
         return
 
-    if text == "📤 Выгрузка пользователей" and cid == ADMIN_CHAT_ID:
+    if text == "📤 Выгрузка пользователей" and cid in ADMIN_CHAT_IDS:
         try:
             with open(users_file, "r") as infile, open("users.csv", "w", newline='') as outfile:
                 writer = csv.writer(outfile)
@@ -221,7 +227,7 @@ def handle_message(message):
             bot.send_message(cid, f"❗ Ошибка при выгрузке: {e}")
         return
 
-    if text == "✏️ Добавить блогера" and cid == ADMIN_CHAT_ID:
+    if text == "✏️ Добавить блогера" and cid in ADMIN_CHAT_IDS:
         bot.send_message(cid, "✏️ Введите username блогера (без @):")
         broadcast_state[cid] = 'adding_blogger'
         return
@@ -235,11 +241,11 @@ def handle_message(message):
 
     bot.send_message(cid, "❗ Неизвестная команда. Если вы уже отправили номер — следуйте инструкции выше.")
 
-# Планировщик
+# Планировщик: напоминание
 def send_daily_reminders():
     for uid in user_ids:
         try:
-            if uid != ADMIN_CHAT_ID:
+            if uid not in ADMIN_CHAT_IDS:
                 bot.send_message(uid,
                     f"⏰ Напоминание: не забудьте скачать *Freedom SuperApp* и пройти регистрацию!\n\nСсылка: {DOWNLOAD_LINK}",
                     parse_mode="Markdown"
