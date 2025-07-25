@@ -6,7 +6,6 @@ import pytz
 import time
 from collections import defaultdict
 import csv
-import threading
 
 # Загрузка .env
 load_dotenv()
@@ -15,7 +14,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 INSTRUCTION_LINK = os.getenv("INSTRUCTION_LINK")
 DOWNLOAD_LINK = "https://freedombank.onelink.me/WNLd/h8jtco42"
 
-# ✅ Список админов (из .env): ADMIN_CHAT_IDS=123456789,987654321
+# ✅ Список админов
 admin_ids_raw = os.getenv("ADMIN_CHAT_IDS", "")
 ADMIN_CHAT_IDS = set(int(x.strip()) for x in admin_ids_raw.split(",") if x.strip().isdigit())
 
@@ -77,6 +76,7 @@ def get_main_menu(username, cid):
         markup.row("📊 Статистика", "📥 Выгрузка CSV")
         markup.row("📤 Выгрузка пользователей")
         markup.row("✏️ Добавить блогера")
+        markup.row("📬 Входящие сообщения")
     return markup
 
 # /start
@@ -107,14 +107,12 @@ def handle_contact(message):
     phone = message.contact.phone_number
     username = (message.from_user.username or "без ника").lower()
 
-    # сохраняем контакт
     with open(contacts_file, "a") as f:
         f.write(f"{cid},{phone},{username}\n")
     add_verified(cid)
     user_ids.add(cid)
     save_user_ids()
 
-    # уведомляем админов
     for admin_id in ADMIN_CHAT_IDS:
         try:
             bot.send_message(admin_id, f"📞 Контакт от @{username}:\n{phone}")
@@ -176,27 +174,6 @@ def handle_message(message):
         bot.send_message(cid, msg, parse_mode="Markdown")
         return
 
-    if text == "📈 Мои старты":
-        starts = []
-        try:
-            with open(referrals_file, "r") as f:
-                for line in f:
-                    parts = line.strip().split(",")
-                    if len(parts) >= 3 and parts[1].lower() == username:
-                        starts.append(parts[2])
-        except FileNotFoundError:
-            bot.send_message(cid, "📂 Файл referrals.txt не найден.")
-            return
-
-        if not starts:
-            bot.send_message(cid, "😕 Пока никто не пришел по вашей ссылке.")
-        else:
-            msg = "📥 Люди, пришедшие по вашей ссылке:\n\n"
-            for user in starts:
-                msg += f"🔹 @{user}\n"
-            bot.send_message(cid, msg)
-        return
-
     if text == "📥 Выгрузка CSV" and cid in ADMIN_CHAT_IDS:
         try:
             with open(contacts_file, "r") as infile, open("contacts.csv", "w", newline='') as outfile:
@@ -232,6 +209,24 @@ def handle_message(message):
         broadcast_state[cid] = 'adding_blogger'
         return
 
+    if text == "📬 Входящие сообщения" and cid in ADMIN_CHAT_IDS:
+        try:
+            with open("inbox.txt", "r") as f:
+                lines = f.readlines()[-10:]
+            if not lines:
+                bot.send_message(cid, "📭 Нет новых сообщений.")
+                return
+            msg = "📬 *Последние входящие:*\n\n"
+            for line in lines:
+                parts = line.strip().split(",", 2)
+                if len(parts) == 3:
+                    user_id, uname, msg_text = parts
+                    msg += f"👤 @{uname} (ID: `{user_id}`):\n💬 {msg_text}\n\n"
+            bot.send_message(cid, msg, parse_mode="Markdown")
+        except FileNotFoundError:
+            bot.send_message(cid, "📭 Сообщений пока нет.")
+        return
+
     if broadcast_state.get(cid) == 'adding_blogger':
         save_blogger(text.lower())
         bloggers.add(text.lower())
@@ -239,9 +234,26 @@ def handle_message(message):
         broadcast_state.pop(cid, None)
         return
 
+    # ✅ Сохраняем и пересылаем входящие сообщения админам
+    if cid not in ADMIN_CHAT_IDS:
+        with open("inbox.txt", "a") as f:
+            f.write(f"{cid},{username},{text}\n")
+        text_safe = text if len(text) < 1000 else text[:1000] + "…"
+        for admin_id in ADMIN_CHAT_IDS:
+            try:
+                bot.send_message(
+                    admin_id,
+                    f"📩 *Новое сообщение от пользователя:*\n\n"
+                    f"👤 @{username} (ID: `{cid}`)\n"
+                    f"💬 {text_safe}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                print(f"❌ Не удалось отправить админу: {e}")
+
     bot.send_message(cid, "❗ Неизвестная команда. Если вы уже отправили номер — следуйте инструкции выше.")
 
-# Планировщик: напоминание
+# Планировщик
 def send_daily_reminders():
     for uid in user_ids:
         try:
