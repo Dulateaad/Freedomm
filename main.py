@@ -133,13 +133,12 @@ def send_instruction(cid):
     bot.send_message(cid,
         "1. Скачайте приложение по ссылке выше\n"
         "2. Пройдите регистрацию (введите ИИН и номер телефона)\n"
-        "3. В поле «Промокод» выберите *ZAKIROVA* (может не запрашиваться)\n"
+        "3. В поле «Промокод» выберите ZAKIROVA (может не запрашиваться)\n"
         "4. Дождитесь выпуска карты и напишите в бот ФИО + номер телефона или пополните карту на 100₸\n"
         "5. Совершите транзакцию: пополнение телефона или покупка\n"
         "6. Получите кэшбек 1000₸\n"
-        "7. Делитесь ссылкой и зарабатывайте по 1000₸ за каждого друга ❤️"
-        "8. Ссылка на группу WhatsApp https://chat.whatsapp.com/DqNwJvK8UJ9GHc24kA3vpS?mode=ac_t ",
-        parse_mode="Markdown"
+        "7. Делитесь ссылкой и зарабатывайте по 1000₸ за каждого друга ❤️\n"
+        "8. Ссылка на группу WhatsApp: https://chat.whatsapp.com/DqNwJvK8UJ9GHc24kA3vpS"
     )
 
 # Обработка текста
@@ -169,10 +168,10 @@ def handle_message(message):
             bot.send_message(cid, "❗ Пока нет данных по пользователям.")
             return
 
-        msg = "📊 *Статистика по блогерам:*\n\n"
+        msg = "📊 Статистика по блогерам:\n\n"
         for ref, count in sorted(stats.items(), key=lambda x: -x[1]):
             msg += f"🔹 {ref} — {count} чел.\n"
-        bot.send_message(cid, msg, parse_mode="Markdown")
+        bot.send_message(cid, msg)
         return
 
     if text == "📥 Выгрузка CSV" and cid in ADMIN_CHAT_IDS:
@@ -217,13 +216,13 @@ def handle_message(message):
             if not lines:
                 bot.send_message(cid, "📭 Нет новых сообщений.")
                 return
-            msg = "📬 *Последние входящие:*\n\n"
+            msg = "📬 Последние входящие:\n\n"
             for line in lines:
                 parts = line.strip().split(",", 2)
                 if len(parts) == 3:
                     user_id, uname, msg_text = parts
-                    msg += f"👤 @{uname} (ID: `{user_id}`):\n💬 {msg_text}\n\n"
-            bot.send_message(cid, msg, parse_mode="Markdown")
+                    msg += f"👤 @{uname} (ID: {user_id}):\n💬 {msg_text}\n\n"
+            bot.send_message(cid, msg)
         except FileNotFoundError:
             bot.send_message(cid, "📭 Сообщений пока нет.")
         return
@@ -235,7 +234,7 @@ def handle_message(message):
         broadcast_state.pop(cid, None)
         return
 
-    # ✅ Сохраняем и пересылаем входящие сообщения админам
+    # Сохраняем и пересылаем входящие сообщения админам
     if cid not in ADMIN_CHAT_IDS:
         with open("inbox.txt", "a") as f:
             f.write(f"{cid},{username},{text}\n")
@@ -244,10 +243,7 @@ def handle_message(message):
             try:
                 bot.send_message(
                     admin_id,
-                    f"📩 *Новое сообщение от пользователя:*\n\n"
-                    f"👤 @{username} (ID: `{cid}`)\n"
-                    f"💬 {text_safe}",
-                    parse_mode="Markdown"
+                    f"📩 Новое сообщение от @{username} (ID: {cid}):\n\n💬 {text_safe}"
                 )
             except Exception as e:
                 print(f"❌ Не удалось отправить админу: {e}")
@@ -260,8 +256,7 @@ def send_daily_reminders():
         try:
             if uid not in ADMIN_CHAT_IDS:
                 bot.send_message(uid,
-                    f"⏰ Напоминание: не забудьте скачать *Freedom SuperApp* и пройти регистрацию!\n\nСсылка: {DOWNLOAD_LINK}",
-                    parse_mode="Markdown"
+                    f"⏰ Напоминание: не забудьте скачать Freedom SuperApp и пройти регистрацию!\n\nСсылка: {DOWNLOAD_LINK}"
                 )
         except Exception as e:
             print(f"❌ Не удалось отправить {uid}: {e}")
