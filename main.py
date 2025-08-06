@@ -14,7 +14,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 INSTRUCTION_LINK = os.getenv("INSTRUCTION_LINK")
 DOWNLOAD_LINK = "https://freedombank.onelink.me/WNLd/h8jtco42"
 
-# ✅ Список админов
+# Список админов
 admin_ids_raw = os.getenv("ADMIN_CHAT_IDS", "")
 ADMIN_CHAT_IDS = set(int(x.strip()) for x in admin_ids_raw.split(",") if x.strip().isdigit())
 
@@ -67,7 +67,7 @@ def add_verified(cid):
 user_ids = load_user_ids()
 bloggers = load_bloggers()
 
-# Кнопки
+# Главное меню
 def get_main_menu(username, cid):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     if username and username.lower() in bloggers:
@@ -77,6 +77,7 @@ def get_main_menu(username, cid):
         markup.row("📤 Выгрузка пользователей")
         markup.row("✏️ Добавить блогера")
         markup.row("📬 Входящие сообщения")
+        markup.row("🚀 Рассылка: Группа")
     return markup
 
 # /start
@@ -100,7 +101,7 @@ def send_welcome(message):
 
     bot.send_message(cid, "✅ Вы уже зарегистрированы!", reply_markup=get_main_menu(username, cid))
 
-# Обработка контакта
+# Контакт
 @bot.message_handler(content_types=['contact'])
 def handle_contact(message):
     cid = message.chat.id
@@ -122,7 +123,7 @@ def handle_contact(message):
     bot.send_message(cid, "✅ Контакт получен. Спасибо!", reply_markup=get_main_menu(username, cid))
     send_instruction(cid)
 
-# Инструкция
+# Инструкция (2 СМС)
 def send_instruction(cid):
     bot.send_message(cid,
         "Привет! На связи команда Айжан Закировой.\n\n"
@@ -135,14 +136,33 @@ def send_instruction(cid):
         "5. Совершите транзакцию: пополнение телефона или покупка\n"
         "6. Получите кэшбек 1000₸\n"
         "7. Делитесь ссылкой и зарабатывайте по 1000₸ за каждого друга ❤️\n"
-        "8. Ссылка на группу WhatsApp: https://chat.whatsapp.com/JZ3IJuFodwmI0jNY6CKKLs?mode=ac_t "
+        "8. Ссылка на группу WhatsApp: https://chat.whatsapp.com/JZ3IJuFodwmI0jNY6CKKLs?mode=ac_t"
     )
 
-    time.sleep(1)  # небольшая пауза между сообщениями
+    time.sleep(1)
 
     bot.send_message(cid,
         "🎁 Заходите в группу, чтобы получать по 1500₸ за каждого друга и участвовать в гонке за Toyota Camry!"
     )
+
+# Рассылка по группе
+def send_group_invite_broadcast():
+    for uid in user_ids:
+        try:
+            if uid not in ADMIN_CHAT_IDS:
+                bot.send_message(
+                    uid,
+                    "🔥 Заходите в нашу группу в WhatsApp, чтобы получать по 1500₸ за каждого друга и участвовать в гонке за Toyota Camry!\n\n"
+                    "👉 Присоединяйтесь: https://chat.whatsapp.com/JZ3IJuFodwmI0jNY6CKKLs?mode=ac_t"
+                )
+        except Exception as e:
+            print(f"❌ Не удалось отправить {uid}: {e}")
+
+@bot.message_handler(func=lambda msg: msg.text == "🚀 Рассылка: Группа" and msg.chat.id in ADMIN_CHAT_IDS)
+def group_broadcast_handler(message):
+    bot.send_message(message.chat.id, "📢 Начинаем рассылку приглашения в группу...")
+    send_group_invite_broadcast()
+    bot.send_message(message.chat.id, "✅ Рассылка завершена.")
 
 # Обработка текста
 @bot.message_handler(func=lambda msg: True)
@@ -237,7 +257,7 @@ def handle_message(message):
         broadcast_state.pop(cid, None)
         return
 
-    # Сохраняем и пересылаем входящие сообщения админам
+    # Сохраняем входящие
     if cid not in ADMIN_CHAT_IDS:
         with open("inbox.txt", "a") as f:
             f.write(f"{cid},{username},{text}\n")
@@ -253,7 +273,7 @@ def handle_message(message):
 
     bot.send_message(cid, "❗ Неизвестная команда. Если вы уже отправили номер — следуйте инструкции выше.")
 
-# Планировщик
+# Напоминания
 def send_daily_reminders():
     for uid in user_ids:
         try:
