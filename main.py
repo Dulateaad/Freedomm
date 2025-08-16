@@ -136,7 +136,7 @@ def send_instruction(cid):
         "5. Совершите транзакцию: пополнение телефона или покупка\n"
         "6. Получите кэшбек 1000₸\n"
         "7. Делитесь ссылкой и зарабатывайте по 1000₸ за каждого друга ❤️\n"
-        "8. Ссылка на группу WhatsApp: https://chat.whatsapp.com/JZ3IJuFodwmI0jNY6CKKLs?mode=ac_t"
+        "8. Ссылка на группу WhatsApp: https://chat.whatsapp.com/DqNwJvK8UJ9GHc24kA3vpS?mode=ac_t"
     )
 
     time.sleep(1)
